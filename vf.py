@@ -1,31 +1,57 @@
-from scapy.all import *
+import os
+import ipaddress
+from concurrent.futures import ThreadPoolExecutor
 import argparse
+import subprocess
 
-def vlan_finder(interface, verbose):
-    print("[+] VLAN Finder başlatılıyor...")
-
-    detected_vlans = set()
-
-    def packet_handler(packet):
-        if packet.haslayer(Dot1Q):
-            vlan_id = packet[Dot1Q].vlan
-            if vlan_id not in detected_vlans:
-                detected_vlans.add(vlan_id)
-                print(f"[+] VLAN tespit edildi: VLAN ID {vlan_id}")
-                if verbose:
-                    print(packet.summary())
-
-    print(f"[+] {interface} arayüzünde dinleme başlatıldı...")
+def is_host_alive(ip):
     try:
-        sniff(iface=interface, prn=packet_handler, filter="ether proto 0x8100", store=0)
-    except KeyboardInterrupt:
-        print("\n[!] Dinleme durduruldu.")
-        print(f"[+] Toplam tespit edilen VLAN ID'leri: {', '.join(map(str, detected_vlans))}")
+        result = subprocess.run(["ping", "-c", "1", "-W", "1", str(ip)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode == 0:
+            print(f"[+] Aktif: {ip}")
+            return ip
+    except Exception as e:
+        print(f"[!] Hata: {e}")
+    return None
+
+def generate_all_private_networks():
+    networks = []
+    # 10.0.0.0/8
+    networks.append("10.0.0.0/8")
+    # 172.16.0.0/12
+    networks.append("172.16.0.0/12")
+    # 192.168.0.0/16
+    networks.append("192.168.0.0/16")
+    return networks
+
+def scan_private_networks(verbose):
+    print("[+] Tüm yerel IP adresleri taranıyor...")
+    networks = generate_all_private_networks()
+    active_hosts = []
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        for network in networks:
+            net = ipaddress.ip_network(network, strict=False)
+            print(f"[+] Tarama başlatıldı: {network}")
+            futures = [executor.submit(is_host_alive, ip) for ip in net.hosts()]
+            for future in futures:
+                result = future.result()
+                if result:
+                    active_hosts.append(result)
+
+    print("\n[+] Tarama tamamlandı.")
+    print("[+] Aktif IP'ler:")
+    for host in active_hosts:
+        print(host)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="VLAN Finder Tool")
-    parser.add_argument("-i", "--interface", required=True, help="Dinleme yapılacak ağ arayüzü (örn. eth0)")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Paket özetlerini göster")
+    parser = argparse.ArgumentParser(description="Tüm Yerel IP Adreslerini Tarama Aracı")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Detaylı çıktı göster")
     args = parser.parse_args()
 
-    vlan_finder(args.interface, args.verbose)
+    # Kontrol için root yetkisi gerekliliği
+    if os.geteuid() != 0:
+        print("[!] Bu aracı çalıştırmak için root yetkisi gereklidir.")
+        exit(1)
+
+    scan_private_networks(args.verbose)

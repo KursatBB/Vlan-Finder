@@ -8,10 +8,9 @@ def is_host_alive(ip):
     try:
         result = subprocess.run(["ping", "-c", "1", "-W", "1", str(ip)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
-            print(f"[+] Aktif: {ip}")
             return ip
     except Exception as e:
-        print(f"[!] Hata: {e}")
+        pass
     return None
 
 def generate_all_private_networks():
@@ -24,7 +23,7 @@ def generate_all_private_networks():
     networks.append("192.168.0.0/16")
     return networks
 
-def scan_private_networks(verbose):
+def scan_private_networks(output_file, verbose):
     print("[+] Tüm yerel IP adresleri taranıyor...")
     networks = generate_all_private_networks()
     active_hosts = []
@@ -40,12 +39,14 @@ def scan_private_networks(verbose):
                     active_hosts.append(result)
 
     print("\n[+] Tarama tamamlandı.")
-    print("[+] Aktif IP'ler:")
-    for host in active_hosts:
-        print(host)
+    print(f"[+] Aktif IP'ler dosyaya yazılıyor: {output_file}")
+    with open(output_file, "w") as f:
+        for host in active_hosts:
+            f.write(f"{host}\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tüm Yerel IP Adreslerini Tarama Aracı")
+    parser.add_argument("-o", "--output", required=True, help="Sonuçların kaydedileceği dosya yolu")
     parser.add_argument("-v", "--verbose", action="store_true", help="Detaylı çıktı göster")
     args = parser.parse_args()
 
@@ -54,4 +55,4 @@ if __name__ == "__main__":
         print("[!] Bu aracı çalıştırmak için root yetkisi gereklidir.")
         exit(1)
 
-    scan_private_networks(args.verbose)
+    scan_private_networks(args.output, args.verbose)

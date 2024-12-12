@@ -48,6 +48,7 @@ def scan_private_networks(output_file, vlan_output_file, verbose):
                 result = future.result()
                 if result:
                     active_hosts.append(result)
+                    print(f"[+] {result} üzerinde VLAN taraması yapılıyor...")
                     vlan_id = detect_vlan(result)
                     if vlan_id:
                         detected_vlans[result] = vlan_id

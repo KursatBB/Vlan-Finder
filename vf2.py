@@ -2,6 +2,7 @@ import os
 import argparse
 import subprocess
 import ipaddress
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def run_nmap_scan(network):
     try:
@@ -42,24 +43,32 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
     start_network = load_progress(progress_file)
     start_network = ipaddress.ip_network(start_network) if start_network else None
 
-    for subnet_16 in base_network.subnets(new_prefix=16):
-        for subnet_24 in subnet_16.subnets(new_prefix=24):
-            if start_network and subnet_24 < start_network:
-                continue  # Skip completed subnets
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        futures = []
 
-            # Tarama için gateway IP'lerini belirle
-            gateway_ips = [
-                str(subnet_24.network_address + 1),  # x.x.x.1
-                str(subnet_24.network_address + 254)  # x.x.x.254
-            ]
+        for subnet_16 in base_network.subnets(new_prefix=16):
+            for subnet_24 in subnet_16.subnets(new_prefix=24):
+                if start_network and subnet_24 < start_network:
+                    continue  # Skip completed subnets
 
-            for gateway_ip in gateway_ips:
-                print(f"[+] Taranıyor: {gateway_ip}")
-                output = run_nmap_scan(gateway_ip)
-                active_vlans.extend(parse_nmap_output(output))
+                # Tarama için gateway IP'lerini belirle
+                gateway_ips = [
+                    str(subnet_24.network_address + 1),  # x.x.x.1
+                    str(subnet_24.network_address + 254)  # x.x.x.254
+                ]
+
+                for gateway_ip in gateway_ips:
+                    print(f"[+] Taranıyor: {gateway_ip}")
+                    futures.append(executor.submit(run_nmap_scan, gateway_ip))
+
+        for future in as_completed(futures):
+            output = future.result()
+            active_vlans.extend(parse_nmap_output(output))
 
             # Save progress
-            save_progress(progress_file, str(subnet_24))
+            if futures:
+                last_subnet = str(subnet_24)
+                save_progress(progress_file, last_subnet)
 
     print("\n[+] Tarama Tamamlandı.")
 

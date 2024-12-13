@@ -9,7 +9,7 @@ def run_nmap_scan(network):
         result = subprocess.run([
             "nmap", "-sn", network
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        print(f"[+] Nmap taraması tamamlandı: {network}")
+        print(f"[+] Nmap taraması tamamlandı: {network}\nÇıktı:\n{result.stdout}")
         return result.stdout
     except Exception as e:
         print(f"[!] Hata: {e}")
@@ -79,7 +79,7 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
             gateway_ip = scan_futures[future]
             try:
                 output = future.result()
-                print(f"[+] Nmap taraması tamamlandı: {gateway_ip}")
+                print(f"[+] Nmap taraması tamamlandı: {gateway_ip}\nÇıktı:\n{output}")
                 scan_outputs.append(output)
             except Exception as e:
                 print(f"[!] Hata {gateway_ip} için: {e}")

@@ -9,6 +9,7 @@ def run_nmap_scan(network):
         result = subprocess.run([
             "nmap", "-sn", network
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"[+] Nmap taraması tamamlandı: {network}")
         return result.stdout
     except Exception as e:
         print(f"[!] Hata: {e}")
@@ -30,7 +31,9 @@ def parse_nmap_output_parallel(outputs):
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(parse_output, output) for output in outputs]
         for future in as_completed(futures):
-            active_vlans.extend(future.result())
+            result = future.result()
+            print(f"[+] Çıktı parse edildi: {result}")
+            active_vlans.extend(result)
 
     return active_vlans
 
@@ -75,7 +78,9 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
         for future in as_completed(scan_futures):
             gateway_ip = scan_futures[future]
             try:
-                scan_outputs.append(future.result())
+                output = future.result()
+                print(f"[+] Nmap taraması tamamlandı: {gateway_ip}")
+                scan_outputs.append(output)
             except Exception as e:
                 print(f"[!] Hata {gateway_ip} için: {e}")
 

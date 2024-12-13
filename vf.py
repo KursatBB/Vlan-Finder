@@ -43,8 +43,13 @@ def scan_private_networks(output_file, vlan_output_file, verbose):
         for network in networks:
             net = ipaddress.ip_network(network, strict=False)
             print(f"[+] Tarama başlatıldı: {network}")
-            futures = [executor.submit(is_host_alive, ip) for ip in net.hosts()]
-            for future in futures:
+            previous_subnet = None
+            for ip in net.hosts():
+                current_subnet = ipaddress.ip_network(f"{ip}/24", strict=False)
+                if previous_subnet != current_subnet:
+                    print(f"[+] Yeni ağ taranıyor: {current_subnet}")
+                    previous_subnet = current_subnet
+                future = executor.submit(is_host_alive, ip)
                 result = future.result()
                 if result:
                     active_hosts.append(result)

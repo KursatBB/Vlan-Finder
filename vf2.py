@@ -14,14 +14,24 @@ def run_nmap_scan(network):
         print(f"[!] Hata: {e}")
         return ""
 
-def parse_nmap_output(output):
+def parse_nmap_output_parallel(outputs):
     active_vlans = []
-    for line in output.splitlines():
-        if "Host is up" in line:
-            previous_line = output.splitlines()[output.splitlines().index(line) - 1]
-            if previous_line.startswith("Nmap scan report for"):
-                vlan = previous_line.split()[-1]
-                active_vlans.append(vlan)
+
+    def parse_output(output):
+        temp_vlans = []
+        for line in output.splitlines():
+            if "Host is up" in line:
+                previous_line = output.splitlines()[output.splitlines().index(line) - 1]
+                if previous_line.startswith("Nmap scan report for"):
+                    vlan = previous_line.split()[-1]
+                    temp_vlans.append(vlan)
+        return temp_vlans
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(parse_output, output) for output in outputs]
+        for future in as_completed(futures):
+            active_vlans.extend(future.result())
+
     return active_vlans
 
 def save_progress(file_path, current_network):
@@ -44,7 +54,7 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
     start_network = ipaddress.ip_network(start_network) if start_network else None
 
     with ThreadPoolExecutor(max_workers=10) as executor:  # Paralel tarama için iş parçacığı sayısı
-        futures = {}
+        scan_futures = {}
 
         for subnet_16 in base_network.subnets(new_prefix=16):
             for subnet_24 in subnet_16.subnets(new_prefix=24):
@@ -59,13 +69,13 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
 
                 for gateway_ip in gateway_ips:
                     print(f"[+] Taranıyor: {gateway_ip}")
-                    futures[executor.submit(run_nmap_scan, gateway_ip)] = gateway_ip
+                    scan_futures[executor.submit(run_nmap_scan, gateway_ip)] = gateway_ip
 
-        for future in as_completed(futures):
-            gateway_ip = futures[future]
+        scan_outputs = []
+        for future in as_completed(scan_futures):
+            gateway_ip = scan_futures[future]
             try:
-                output = future.result()
-                active_vlans.extend(parse_nmap_output(output))
+                scan_outputs.append(future.result())
             except Exception as e:
                 print(f"[!] Hata {gateway_ip} için: {e}")
 
@@ -73,7 +83,8 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
             last_subnet = str(subnet_24)
             save_progress(progress_file, last_subnet)
 
-    print("\n[+] Tarama Tamamlandı.")
+    print("\n[+] Tarama tamamlandı. Çıktılar işleniyor...")
+    active_vlans = parse_nmap_output_parallel(scan_outputs)
 
     # Save active VLANs
     print(f"[+] Aktif VLAN'lar dosyaya yazılıyor: {vlan_output_file}")

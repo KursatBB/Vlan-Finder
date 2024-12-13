@@ -42,17 +42,17 @@ def scan_vlans(output_file, progress_file, vlan_output_file):
     start_network = load_progress(progress_file)
     start_network = ipaddress.ip_network(start_network) if start_network else None
 
-    for /16 subnet in base_network.subnets(new_prefix=16):
-        for /24 subnet in subnet.subnets(new_prefix=24):
-            if start_network and subnet < start_network:
+    for subnet_16 in base_network.subnets(new_prefix=16):
+        for subnet_24 in subnet_16.subnets(new_prefix=24):
+            if start_network and subnet_24 < start_network:
                 continue  # Skip completed subnets
 
-            print(f"[+] Taranıyor: {subnet}")
-            output = run_nmap_scan(str(subnet))
+            print(f"[+] Taranıyor: {subnet_24}")
+            output = run_nmap_scan(str(subnet_24))
             active_vlans.extend(parse_nmap_output(output))
 
             # Save progress
-            save_progress(progress_file, str(subnet))
+            save_progress(progress_file, str(subnet_24))
 
     print("\n[+] Tarama Tamamlandı.")
 

@@ -7,7 +7,7 @@ from scapy.all import *
 
 def is_host_alive(ip):
     try:
-        result = subprocess.run(["ping", "-c", "1", "-W", "0.2", str(ip)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(["ping", "-c", "1", "-W", "0.1", str(ip)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
             return ip
     except Exception as e:
@@ -26,7 +26,7 @@ def generate_all_private_networks():
 
 def detect_vlan(ip):
     try:
-        response = srp1(Ether(dst="ff:ff:ff:ff:ff:ff") / Dot1Q(vlan=1) / ARP(pdst=str(ip)), timeout=0.5, verbose=False)
+        response = srp1(Ether(dst="ff:ff:ff:ff:ff:ff") / Dot1Q(vlan=1) / ARP(pdst=str(ip)), timeout=0.3, verbose=False)
         if response and response.haslayer(Dot1Q):
             return response[Dot1Q].vlan
     except Exception as e:
@@ -39,12 +39,13 @@ def scan_private_networks(output_file, vlan_output_file, verbose):
     active_hosts = []
     detected_vlans = {}
 
-    with ThreadPoolExecutor(max_workers=500) as executor:
-        futures = []
+    with ThreadPoolExecutor(max_workers=1000) as executor:
         for network in networks:
             net = ipaddress.ip_network(network, strict=False)
             print(f"[+] Tarama başlatıldı: {network}")
             previous_subnet = None
+            futures = []
+
             for ip in net.hosts():
                 current_subnet = ipaddress.ip_network(f"{ip}/24", strict=False)
                 if previous_subnet != current_subnet:
@@ -52,14 +53,15 @@ def scan_private_networks(output_file, vlan_output_file, verbose):
                     previous_subnet = current_subnet
                 futures.append(executor.submit(is_host_alive, ip))
 
-        for future in as_completed(futures):
-            result = future.result()
-            if result:
-                active_hosts.append(result)
-                print(f"[+] {result} üzerinde VLAN taraması yapılıyor...")
-                vlan_id = detect_vlan(result)
-                if vlan_id:
-                    detected_vlans[result] = vlan_id
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    active_hosts.append(result)
+                    if verbose:
+                        print(f"[+] {result} üzerinde VLAN taraması yapılıyor...")
+                    vlan_id = detect_vlan(result)
+                    if vlan_id:
+                        detected_vlans[result] = vlan_id
 
     print("\n[+] Tarama tamamlandı.")
     print(f"[+] Aktif IP'ler dosyaya yazılıyor: {output_file}")

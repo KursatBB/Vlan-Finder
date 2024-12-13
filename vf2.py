@@ -33,8 +33,8 @@ def load_progress(file_path):
             return f.read().strip()
     return None
 
-def scan_vlans(output_file, progress_file, vlan_output_file):
-    print("[+] VLAN Taraması Başlatılıyor...")
+def scan_gateways(output_file, progress_file, vlan_output_file):
+    print("[+] Gateway Taraması Başlatılıyor...")
     base_network = ipaddress.ip_network("10.0.0.0/8")
     active_vlans = []
 
@@ -47,9 +47,16 @@ def scan_vlans(output_file, progress_file, vlan_output_file):
             if start_network and subnet_24 < start_network:
                 continue  # Skip completed subnets
 
-            print(f"[+] Taranıyor: {subnet_24}")
-            output = run_nmap_scan(str(subnet_24))
-            active_vlans.extend(parse_nmap_output(output))
+            # Tarama için gateway IP'lerini belirle
+            gateway_ips = [
+                str(subnet_24.network_address + 1),  # x.x.x.1
+                str(subnet_24.network_address + 254)  # x.x.x.254
+            ]
+
+            for gateway_ip in gateway_ips:
+                print(f"[+] Taranıyor: {gateway_ip}")
+                output = run_nmap_scan(gateway_ip)
+                active_vlans.extend(parse_nmap_output(output))
 
             # Save progress
             save_progress(progress_file, str(subnet_24))
@@ -63,7 +70,7 @@ def scan_vlans(output_file, progress_file, vlan_output_file):
             f.write(f"{vlan}\n")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Nmap ile VLAN Taraması")
+    parser = argparse.ArgumentParser(description="Nmap ile Gateway Taraması")
     parser.add_argument("-o", "--output", required=True, help="Aktif VLAN'ların kaydedileceği dosya yolu")
     parser.add_argument("-p", "--progress", required=True, help="Durum bilgisinin kaydedileceği dosya yolu")
     args = parser.parse_args()
@@ -73,4 +80,4 @@ if __name__ == "__main__":
         print("[!] Bu aracı çalıştırmak için root yetkisi gereklidir.")
         exit(1)
 
-    scan_vlans(args.output, args.progress, args.output)
+    scan_gateways(args.output, args.progress, args.output)

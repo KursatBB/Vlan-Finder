@@ -43,8 +43,8 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
     start_network = load_progress(progress_file)
     start_network = ipaddress.ip_network(start_network) if start_network else None
 
-    with ThreadPoolExecutor(max_workers=100) as executor:
-        futures = []
+    with ThreadPoolExecutor(max_workers=10) as executor:  # Paralel tarama için iş parçacığı sayısı
+        futures = {}
 
         for subnet_16 in base_network.subnets(new_prefix=16):
             for subnet_24 in subnet_16.subnets(new_prefix=24):
@@ -59,16 +59,19 @@ def scan_gateways(output_file, progress_file, vlan_output_file):
 
                 for gateway_ip in gateway_ips:
                     print(f"[+] Taranıyor: {gateway_ip}")
-                    futures.append(executor.submit(run_nmap_scan, gateway_ip))
+                    futures[executor.submit(run_nmap_scan, gateway_ip)] = gateway_ip
 
         for future in as_completed(futures):
-            output = future.result()
-            active_vlans.extend(parse_nmap_output(output))
+            gateway_ip = futures[future]
+            try:
+                output = future.result()
+                active_vlans.extend(parse_nmap_output(output))
+            except Exception as e:
+                print(f"[!] Hata {gateway_ip} için: {e}")
 
             # Save progress
-            if futures:
-                last_subnet = str(subnet_24)
-                save_progress(progress_file, last_subnet)
+            last_subnet = str(subnet_24)
+            save_progress(progress_file, last_subnet)
 
     print("\n[+] Tarama Tamamlandı.")
 

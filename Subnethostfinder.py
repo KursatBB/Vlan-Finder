@@ -31,10 +31,10 @@ def scan_subnet(subnet):
 def main():
     # Argümanları al
     parser = argparse.ArgumentParser(description="Subnet tarayıcı")
-    parser.add_argument("--input_file", type=str, required=True, help="Subnetlerin bulunduğu giriş dosyası")
-    parser.add_argument("--subnet_output_file", type=str, required=True, help="Aktif subnetlerin kaydedileceği dosya")
-    parser.add_argument("--hosts_output_file", type=str, required=True, help="Host bilgilerinin kaydedileceği dosya")
-    parser.add_argument("--threads", type=int, default=10, help="Paralel çalışan thread sayısı (varsayılan: 10)")
+    parser.add_argument("-i", "--input_file", type=str, required=True, help="Subnetlerin bulunduğu giriş dosyası")
+    parser.add_argument("-so", "--subnet_output_file", type=str, required=True, help="Aktif subnetlerin kaydedileceği dosya")
+    parser.add_argument("-ho", "--hosts_output_file", type=str, required=True, help="Host bilgilerinin kaydedileceği dosya")
+    parser.add_argument("-t", "--threads", type=int, default=10, help="Paralel çalışan thread sayısı (varsayılan: 10)")
     args = parser.parse_args()
 
     # Giriş dosyasını oku

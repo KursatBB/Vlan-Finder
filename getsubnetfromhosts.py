@@ -31,22 +31,19 @@ def group_hosts_by_subnet(hosts_file, output_file, min_hosts=2):
                     print(f"[!] Geçersiz IP veya hostname atlandı: {host}")
 
     # En az `min_hosts` sayıda host içeren subnetleri filtrele
-    filtered_subnets = {subnet: hosts for subnet, hosts in subnet_groups.items() if len(hosts) >= min_hosts}
+    filtered_subnets = [subnet for subnet, hosts in subnet_groups.items() if len(hosts) >= min_hosts]
 
-    # Sonuçları dosyaya yaz
+    # Sadece subnetleri dosyaya yaz
     with open(output_file, "w") as file:
-        for subnet, hosts in filtered_subnets.items():
-            file.write(f"Subnet: {subnet}\n")
-            for host in hosts:
-                file.write(f"  {host}\n")
-            file.write("\n")
+        for subnet in sorted(filtered_subnets):
+            file.write(f"{subnet}\n")
 
     print(f"[+] Subnetler '{output_file}' dosyasına kaydedildi.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hostlardan Subnet Çıkartma Aracı")
     parser.add_argument("-i", "--input", required=True, help="Hostların bulunduğu giriş dosyası")
-    parser.add_argument("-o", "--output", required=True, help="Çıktının kaydedileceği dosya")
+    parser.add_argument("-o", "--output", required=True, help="Subnetlerin kaydedileceği dosya")
     parser.add_argument("-m", "--min-hosts", type=int, default=2, help="Bir subnette olması gereken minimum host sayısı (varsayılan: 2)")
     args = parser.parse_args()
 

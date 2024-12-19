@@ -1,3 +1,5 @@
+import re
+
 # Metin dosyasını okuyup açık portlara sahip IP adreslerini bulmak
 open_ports = []
 
@@ -8,8 +10,11 @@ for i, line in enumerate(lines):
     if "445/tcp open" in line:  # "445/tcp open" geçen satırları bul
         # 4 satır öncesindeki satırda IP adresi bulunuyor
         if i >= 4 and "Nmap scan report for" in lines[i-4]:
-            ip_address = lines[i-4].strip().split()[-1]  # IP adresini al
-            open_ports.append(ip_address)
+            # Satırdan yalnızca IP adresini çıkar
+            match = re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", lines[i-4])
+            if match:
+                ip_address = match.group(0)
+                open_ports.append(ip_address)
 
 # Bulunan IP adreslerini yazdır
 print("Açık porta sahip IP adresleri:")

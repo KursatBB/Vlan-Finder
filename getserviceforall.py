@@ -2,7 +2,6 @@ import nmap
 import argparse
 import sys
 import subprocess
-import random
 from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 
@@ -26,120 +25,127 @@ def read_targets(file_path):
         print(f"Error reading file: {e}")
         sys.exit(1)
 
-def check_port_open(scanner, host, ports):
-    """Checks if any of the specified ports are open on a host."""
-    open_ports = []
-    try:
-        scan_result = scanner.scan(hosts=host, ports=ports, arguments="-Pn")
-        for port in ports.split(','):
-            port = int(port.strip())
-            try:
-                state = scan_result["scan"][host]["tcp"][port]["state"]
-                if state == "open":
-                    open_ports.append(port)
-            except KeyError:
-                pass
-        return open_ports
-    except Exception as e:
-        print(f"Error checking ports on {host}: {e}")
-        return []
-
-def scan_host(target, ports, smb_ports, smb_scripts, rdp_ports, rdp_scripts, scanner, output_file):
-    """Scans a single host for specified ports and SMB/RDP scripts."""
-    print(f"Checking {target} for ports {ports}...")
-    open_ports = check_port_open(scanner, target, ports)
-    if not open_ports:
-        print(f"No specified ports are open on {target}. Skipping...")
-        return
-
-    # SMB Scan
-    for smb_port in smb_ports:
-        if smb_port in open_ports:
-            print(f"Scanning {target} on SMB port {smb_port}...")
-            try:
-                script_arguments = f"--script {','.join(smb_scripts)}"
-                scan_result = scanner.scan(
-                    hosts=target,
-                    ports=str(smb_port),
-                    arguments=script_arguments
-                )
-                # Append Nmap output to the file
-                with open(output_file, 'a') as f:
-                    f.write(scanner.command_line() + "\n")
-                    f.write(scanner.csv() + "\n")
-            except Exception as e:
-                print(f"Error scanning {target} on port {smb_port}: {e}")
-
-    # RDP Scan
-    for rdp_port in rdp_ports:
-        if rdp_port in open_ports:
-            print(f"Scanning {target} on RDP port {rdp_port}...")
-            try:
-                script_arguments = f"--script {','.join(rdp_scripts)}"
-                scan_result = scanner.scan(
-                    hosts=target,
-                    ports=str(rdp_port),
-                    arguments=script_arguments
-                )
-                # Append Nmap output to the file
-                with open(output_file, 'a') as f:
-                    f.write(scanner.command_line() + "\n")
-                    f.write(scanner.csv() + "\n")
-            except Exception as e:
-                print(f"Error scanning {target} on port {rdp_port}: {e}")
-
-def smb_rdp_scan_parallel(targets, ports, output_file, max_threads, interface, packet_limit):
-    """Scans targets in parallel for SMB and RDP services and pauses after a packet limit."""
-    scanner = nmap.PortScanner()
-    smb_ports = [139, 445]
+def determine_scripts(ports):
+    """Determines Nmap scripts to run based on the given ports."""
     smb_scripts = [
         "smb-enum-shares",
         "smb-enum-users",
         "smb-enum-sessions",
         "smb-os-discovery"
     ]
-    rdp_ports = [3389]
     rdp_scripts = [
         "rdp-enum-encryption",
-        "rdp-vuln-ms12-020"
+        "rdp-vuln-ms12-020",
+        "rdp-ntlm-info"
     ]
+    additional_scripts = []
 
-    packet_count = 0
-    active_targets = iter(targets)
+    if "139" in ports or "445" in ports:
+        additional_scripts.extend(smb_scripts)
+    if "3389" in ports:
+        additional_scripts.extend(rdp_scripts)
+
+    return additional_scripts
+
+def scan_target(target, ports, scanner, output_file, service_hosts, scripts):
+    """Performs scanning on a single target with specified ports and scripts."""
+    print(f"Scanning {target} for ports {ports}...")
+    try:
+        script_arguments = f"--script {','.join(scripts)}" if scripts else ""
+        scan_result = scanner.scan(
+            hosts=target,
+            ports=ports,
+            arguments=f"-Pn --open {script_arguments}"
+        )
+        # Save Nmap output to the main output file
+        with open(output_file, 'a') as f:
+            f.write(scanner.get_nmap_output())
+
+        # Extract open services and add them to the shared dictionary
+        target_service_hosts = extract_open_services(scan_result)
+        for service, hosts in target_service_hosts.items():
+            if service not in service_hosts:
+                service_hosts[service] = []
+            service_hosts[service].extend(hosts)
+
+    except Exception as e:
+        print(f"Error scanning {target}: {e}")
+
+def extract_open_services(scan_result):
+    """Extracts open services and associated hosts from the Nmap result."""
+    service_hosts = {}
+    for host, details in scan_result.get("scan", {}).items():
+        for port, port_data in details.get("tcp", {}).items():
+            if port_data.get("state") == "open":
+                service = port_data.get("name", f"port_{port}")
+                if service not in service_hosts:
+                    service_hosts[service] = []
+                service_hosts[service].append(host)
+    return service_hosts
+
+def write_service_hosts(service_hosts):
+    """Writes service-specific host lists to separate files."""
+    for service, hosts in service_hosts.items():
+        file_name = f"{service}_hosts.txt"
+        with open(file_name, "w") as f:
+            for host in hosts:
+                f.write(f"{host}\n")
+        print(f"Saved hosts for service '{service}' to {file_name}")
+
+def parallel_scan(targets, ports, output_file, max_threads, interface, hosts_limit, scripts):
+    """Scans targets in parallel and resets interface after scanning a set number of hosts."""
+    scanner = nmap.PortScanner()
+    service_hosts = {}  # Shared dictionary for tracking service-specific hosts
+    processed_hosts = 0  # Counter for processed hosts
 
     def process_target(target):
         """Wrapper for processing a single target."""
-        nonlocal packet_count
-        packet_count += 1
+        nonlocal processed_hosts
+        processed_hosts += 1
 
-        # Pause scanning and reset interface after reaching the packet limit
-        if packet_count >= packet_limit:
-            print(f"Packet limit ({packet_limit}) reached. Pausing...")
+        # Reset interface after reaching the hosts limit
+        if processed_hosts >= hosts_limit:
+            print(f"Host limit ({hosts_limit}) reached. Resetting interface...")
             reset_interface(interface)
-            print("Resuming scanning...")
-            packet_count = 0
+            processed_hosts = 0
 
-        scan_host(target, ports, smb_ports, smb_scripts, rdp_ports, rdp_scripts, scanner, output_file)
+        # Perform scan
+        scan_target(target, ports, scanner, output_file, service_hosts, scripts)
 
     # Use ThreadPoolExecutor for parallel scanning
     with ThreadPoolExecutor(max_threads) as executor:
-        executor.map(process_target, active_targets)
+        executor.map(process_target, targets)
+
+    # Write service-specific host lists after all scans
+    write_service_hosts(service_hosts)
 
 def main():
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="SMB and RDP Enumeration Scanner with Pause/Resume")
+    parser = argparse.ArgumentParser(description="Flexible Nmap Scanner with Service-Specific Host Lists")
     parser.add_argument("-i", "--input", required=True, help="Path to the file containing IP/subnet list")
-    parser.add_argument("-p", "--ports", required=True, help="Comma-separated list of ports to check (e.g., 80,443,8080)")
-    parser.add_argument("-o", "--output", required=True, help="Output file path to save results")
+    parser.add_argument("-p", "--ports", required=True, help="Comma-separated list of ports to scan (e.g., 80,443,3389)")
+    parser.add_argument("-o", "--output", required=True, help="Output file path to save Nmap results")
     parser.add_argument("-t", "--threads", type=int, default=5, help="Number of parallel threads (default: 5)")
     parser.add_argument("-n", "--interface", required=True, help="Network interface to reset (e.g., eth0)")
-    parser.add_argument("-l", "--packet-limit", type=int, default=50, help="Number of packets before pausing (default: 50)")
+    parser.add_argument("-hl", "--hosts-limit", type=int, default=10, help="Number of hosts to scan before resetting interface (default: 10)")
 
     args = parser.parse_args()
 
+    # Determine scripts based on ports
+    port_list = args.ports.split(",")
+    scripts = determine_scripts(port_list)
+
     # Read targets and perform scan
     targets = read_targets(args.input)
-    smb_rdp_scan_parallel(targets, args.ports, args.output, args.threads, args.interface, args.packet_limit)
+    parallel_scan(
+        targets,
+        args.ports,
+        args.output,
+        args.threads,
+        args.interface,
+        args.hosts_limit,
+        scripts
+    )
 
 if __name__ == "__main__":
     main()
